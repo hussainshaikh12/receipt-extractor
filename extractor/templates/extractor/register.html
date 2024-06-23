@@ -1,0 +1,76 @@
+{% extends "extractor/layout.html" %}
+
+{% block body %}
+
+<div class="container py-4">
+  <div class="row justify-content-center">
+    <div class="col-md-6">
+      <div class="card card-md">
+        <div class="card-header">
+          <h1 class="card-title">Register</h1>
+        </div>
+        <div class="card-body p-2">
+            {% if messages %}
+            <div class="alert alert-danger alert-dismissible" role="alert">
+                <div class="d-flex">
+                  <div>
+                    <svg  xmlns="http://www.w3.org/2000/svg"  width="24"  height="24"  viewBox="0 0 24 24"  fill="none"  stroke="currentColor"  stroke-width="2"  stroke-linecap="round"  stroke-linejoin="round"  class="icon icon-tabler icons-tabler-outline icon-tabler-x"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M18 6l-12 12" /><path d="M6 6l12 12" /></svg>
+                  </div>
+                  <div>
+                    <h4 class="alert-title">Uh oh, something went wrong</h4>
+                    {% for message in messages %}
+                        <div class="text-secondary">{{message}}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <a class="btn-close" data-bs-dismiss="alert" aria-label="close"></a>
+              </div>
+            {% endif %}
+            
+            <form method="POST">
+                {% csrf_token %}
+                <fieldset class="form-fieldset bg-white border-0">
+    
+                {% if form.errors %}
+                  <div class="alert alert-danger">
+                    {% for field in form %}
+                      {% for error in field.errors %}
+                        <p>{{ field.label }}: {{ error }}</p>
+                      {% endfor %}
+                    {% endfor %}
+                  </div>
+                {% endif %}
+    
+                {% for field in form %}
+                  <div class="mb-3">
+                    <label class="form-label {% if field.field.required %}required{% endif %}" 
+                           for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    <input type="{{ field.field.widget.input_type }}" 
+                           class="form-control {% if field.errors %}is-invalid{% endif %}" 
+                           name="{{ field.name }}" 
+                           id="{{ field.id_for_label }}"
+                           {% if field.field.widget.attrs.placeholder %} placeholder="{{ field.field.widget.attrs.placeholder }}"{% endif %}
+                           value="{{ field.value|default_if_none:'' }}" 
+                           {% if field.field.required %}required{% endif %}
+                           {% if field.field.widget.attrs.autocomplete %} autocomplete="{{ field.field.widget.attrs.autocomplete }}"{% endif %}>
+                    {% if field.errors %}
+                      <div class="invalid-feedback">
+                        {{ field.errors.as_text }}
+                      </div>
+                    {% endif %}
+                  </div>
+                {% endfor %}
+    
+                <div class="form-footer ">
+                  <button type="submit" class="btn btn-primary ">Register</button>
+                </div>
+                </fieldset>
+              </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock body %}
+
+

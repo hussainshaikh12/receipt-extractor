@@ -1,0 +1,25 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{% block title %}Expense tracker{% endblock %}</title>
+        <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/js/tabler.min.js"></script>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta17/dist/css/tabler.min.css">
+        
+        <!-- Chart.js Library -->
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <!-- luxon Library -->
+        <script src="https://cdn.jsdelivr.net/npm/luxon"></script>
+        <!-- Chart.js Adapter for luxon -->
+        <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
+    </head>
+
+    <body>
+        {% block body %}
+        
+        {% endblock %}
+    </body>
+</html>
