@@ -61,7 +61,7 @@ def process_receipt(file_path, mime_type=None):
             "total_amount": "total amount"
         
             return Date in the format DD-MM-YYYY, Vendor/Store Name as a string, and Total Amount as a number.
-            Always return a single valid JSON format.
+            Always return a single valid JSON object.
             Receipt Content:{content}
         """
         prompt = PromptTemplate(input_variables=["content"], template=template)

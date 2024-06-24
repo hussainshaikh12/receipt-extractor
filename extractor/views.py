@@ -27,6 +27,8 @@ from .utils import process_receipt, process_receipt_query
 from core.settings import (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN,
                            TWILIO_NUMBER, TWILIO_VERIFY_SERVICE_SID)
 
+import threading
+from django.db import connection
 
 client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 auth_string = f"{TWILIO_ACCOUNT_SID}:{TWILIO_AUTH_TOKEN}"
@@ -200,8 +202,8 @@ def index(request):
                   .order_by('date'))
     
     
-    for data in chart_data:
-        print(f"Date: {data['date']}, Total: {data['total']}")
+    # for data in chart_data:
+    #     print(f"Date: {data['date']}, Total: {data['total']}")
 
     dates = [data['date'].isoformat() for data in chart_data]
     totals = [round(float(data['total']), 2) if data['total'] is not None else 0.0 for data in chart_data]
@@ -216,6 +218,8 @@ def index(request):
     })
 
 
+
+
 @csrf_exempt
 def process_whatsapp_receipt(request):
     if request.method == 'POST':
@@ -226,69 +230,120 @@ def process_whatsapp_receipt(request):
 
         user, _ = CustomUser.objects.get_or_create(phone_number=user_phone)
 
+        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+
         if media_url:
-            media_sid = os.path.basename(urlparse(media_url).path)
-            file_extension = mimetypes.guess_extension(mime_type)
-            filename = f'{media_sid}{file_extension}'
-
-            response = requests.get(media_url, headers=auth_header, stream=True)
-            
-            with NamedTemporaryFile() as file_temp:
-                file_temp.write((response.content))
-                file_temp.flush() 
-
-                
-                client.messages.create(
-                    from_=f"whatsapp:{TWILIO_NUMBER}",
-                    body= 'Ok let me extract the data for you',
-                    to=f"whatsapp:{user_phone}"
-                    )
-                extracted_data = process_receipt(file_temp.name, mime_type)
-                print(extracted_data)
-
-                
-                if extracted_data is None: return HttpResponse(create_resp(user_phone, "Error processing receipt data. Please try again with a clear image or PDF."))
-                form_data = {
-                    'date': extracted_data.get("date"), 
-                    'vendor': extracted_data.get("vendor"),
-                    'total_amount': extracted_data.get("total_amount")
-                }
-
-
-                file_temp_in_memory = InMemoryUploadedFile(
-                    file=BytesIO(response.content),
-                    field_name='file',  
-                    name=filename,
-                    content_type=mime_type,
-                    size=len(response.content),
-                    charset=None
-                )
-                
-                form = ReceiptForm(form_data, files={'file': file_temp_in_memory}) 
-                if form.is_valid():
-                    receipt = form.save(commit=False)
-                    receipt.user = user
-                    receipt.save()
-                    formatted_data = f"Your receipt was processed !! \n"\
-                    f"Receipt Details:\n"\
-                    f"Date: {form_data['date']}\n"\
-                    f"Vendor: {form_data['vendor']}\n"\
-                    f"Total Amount: ${form_data['total_amount']:.2f}\n"
-                    
-                    return HttpResponse(create_resp(user_phone, formatted_data))
-                else:
-                    print(form.errors.as_json())
-                    return HttpResponse(create_resp(user_phone, "Error processing receipt data. Please try again with a clear image or PDF."))
-               
+            threading.Thread(target=process_receipt_thread, args=(media_url, mime_type, user, client, user_phone)).start()
+            return HttpResponse(create_resp(user_phone,'Let me extract the data for you!! Processing receipt...'))
         else:
-            client.messages.create(
-            from_=f"whatsapp:{TWILIO_NUMBER}",
-            body= 'Ok let me process your query',
-            to=f"whatsapp:{user_phone}"
-            )
-            result = process_receipt_query(user=user, query=message)
-            print(result)
-            if not result: result = 'Sorry I was not able to solve your query, can you try again'
-            return HttpResponse(create_resp(user_phone, f'''{result}'''))
-    
+            threading.Thread(target=process_query_thread, args=(user, message, client, user_phone)).start()
+            return HttpResponse(create_resp(user_phone,'Let me process the query for you!! Processing query...'))
+
     return HttpResponse('Invalid method. Use POST')
+
+import os
+import tempfile
+
+def process_receipt_thread(media_url, mime_type, user, client, user_phone):
+    temp_file_path = None
+    try:
+        connection.close()
+
+        media_sid = os.path.basename(urlparse(media_url).path)
+        file_extension = mimetypes.guess_extension(mime_type)
+        filename = f'{media_sid}{file_extension}'
+
+        response = requests.get(media_url, headers=auth_header, stream=True)
+
+        # Create a temporary file
+        fd, temp_file_path = tempfile.mkstemp(suffix=file_extension)
+        with os.fdopen(fd, 'wb') as temp_file:
+            temp_file.write(response.content)
+
+
+        extracted_data = process_receipt(temp_file_path, mime_type)
+        print(extracted_data)
+
+        if extracted_data is None:
+            client.messages.create(
+                from_=f"whatsapp:{TWILIO_NUMBER}",
+                body="Error processing receipt data. Please try again with a clear image or PDF.",
+                to=f"whatsapp:{user_phone}"
+            )
+            return
+
+        form_data = {
+            'date': extracted_data.get("date"),
+            'vendor': extracted_data.get("vendor"),
+            'total_amount': extracted_data.get("total_amount")
+        }
+
+        file_temp_in_memory = InMemoryUploadedFile(
+            file=BytesIO(response.content),
+            field_name='file',
+            name=filename,
+            content_type=mime_type,
+            size=len(response.content),
+            charset=None
+        )
+
+        form = ReceiptForm(form_data, files={'file': file_temp_in_memory})
+        if form.is_valid():
+            receipt = form.save(commit=False)
+            receipt.user = user
+            receipt.save()
+            formatted_data = f"Your receipt was processed !! \n" \
+                             f"Receipt Details:\n" \
+                             f"Date: {form_data['date']}\n" \
+                             f"Vendor: {form_data['vendor']}\n" \
+                             f"Total Amount: ${form_data['total_amount']:.2f}\n"
+
+            client.messages.create(
+                from_=f"whatsapp:{TWILIO_NUMBER}",
+                body=formatted_data,
+                to=f"whatsapp:{user_phone}"
+            )
+        else:
+            print(form.errors.as_json())
+            client.messages.create(
+                from_=f"whatsapp:{TWILIO_NUMBER}",
+                body="Error processing receipt data. Please try again with a clear image or PDF.",
+                to=f"whatsapp:{user_phone}"
+            )
+
+    except Exception as e:
+        print(f"Error in process_receipt_thread: {str(e)}")
+        client.messages.create(
+            from_=f"whatsapp:{TWILIO_NUMBER}",
+            body="An error occurred while processing your receipt. Please try again.",
+            to=f"whatsapp:{user_phone}"
+        )
+    finally:
+        # Clean up the temporary file
+        if temp_file_path and os.path.exists(temp_file_path):
+            os.unlink(temp_file_path)
+
+
+def process_query_thread(user, message, client, user_phone):
+    try:
+        connection.close()
+
+        result = process_receipt_query(user=user, query=message)
+        print(result)
+
+        if not result:
+            result = 'Sorry I was not able to solve your query, can you try again'
+
+        client.messages.create(
+            from_=f"whatsapp:{TWILIO_NUMBER}",
+            body=result,
+            to=f"whatsapp:{user_phone}"
+        )
+
+    except Exception as e:
+        print(f"Error in process_query_thread: {str(e)}")
+        client.messages.create(
+            from_=f"whatsapp:{TWILIO_NUMBER}",
+            body="An error occurred while processing your query. Please try again.",
+            to=f"whatsapp:{user_phone}"
+        )
